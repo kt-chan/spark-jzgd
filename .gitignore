@@ -1,0 +1,12 @@
+airflow/airflow-webserver.pid
+airflow/unittests.cfg
+dbt/.user.yml
+dbt/.vs
+dbt/data/order_products__prior.csv.zip
+*.pyc
+sample_data/*
+bak
+.gitkeep
+gitpush.sh
+logs/*
+airflow/logs/*

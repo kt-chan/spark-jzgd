@@ -1,0 +1,111 @@
+FROM jupyter/all-spark-notebook:ubuntu-18.04
+## # Alternative docker base images
+## jupyter/all-spark-notebook:spark-3.3.1
+
+ENV SPARK_VERSION=3.3.1
+ENV PYTHON_VERSION=3.6
+ENV SPARK_HOME=/usr/local/spark-${SPARK_VERSION}
+
+# Update local sources.list
+USER root
+COPY ./conf/ubuntu-sources-hk.list /etc/apt/sources.list
+RUN sed -i "s/bionic/jammy/g" /etc/apt/sources.list
+
+
+## Install packages
+RUN apt-get update &&  apt-get install -y apt-utils sasl2-bin libsasl2-2 libsasl2-dev libsasl2-modules libsasl2-modules-gssapi-mit libpq-dev python3-dev
+## RUN apt-get install software-properties-common -y
+## RUN add-apt-repository 'ppa:deadsnakes/ppa' -y 
+
+## Install Spark updates
+COPY ./tars/spark-${SPARK_VERSION}-bin-hadoop3.tgz .
+RUN tar xzf "spark-${SPARK_VERSION}-bin-hadoop3.tgz" && \
+    rm "spark-${SPARK_VERSION}-bin-hadoop3.tgz" && \
+    mv "spark-${SPARK_VERSION}-bin-hadoop3" $SPARK_HOME
+RUN rm -rf /usr/local/spark
+RUN ln -sf ${SPARK_HOME} /usr/local/spark	
+
+## install jupyter packages
+USER jovyan 
+RUN pip install --upgrade pip wheel setuptools
+RUN pip install sqlalchemy==1.3    && \
+    pip install pyhive        && \
+    pip install thrift        && \
+    pip install sasl          && \
+    pip install thrift-sasl   && \
+	pip install psycopg2
+
+RUN /opt/conda/bin/pip install --no-cache-dir \
+    'ipykernel' \
+    'pyspark==3.3.1' \
+    'findspark'
+
+RUN pip3 install --upgrade pandas
+
+## # 基于Ubuntu镜像创建一个新的镜像
+## FROM ubuntu:18.04
+## 
+## ENV SPARK_VERSION=3.3.1
+## ENV PYTHON_VERSION=3.6
+## ENV SPARK_HOME=/usr/local/spark
+## 
+## USER root
+## COPY ./conf/ubuntu-sources-hk.list /etc/apt/sources.list
+## RUN sed -i "s/bionic/jammy/g" /etc/apt/sources.list
+## 
+## # 安装必要的依赖项
+## RUN apt-get update
+##     
+## RUN	apt-get install -y curl && \
+##     apt-get install -y wget && \
+##     apt-get install -y bzip2 && \
+##     apt-get install -y ca-certificates && \
+##     apt-get install -y sudo && \
+##     apt-get clean
+## 
+## RUN apt-get install -y apt-utils sasl2-bin libsasl2-2 libsasl2-dev libsasl2-modules libsasl2-modules-gssapi-mit libpq-dev
+## 
+## # 安装 Miniconda 和必要的 Python 库
+## COPY ./tars/Miniconda3-latest-Linux-x86_64.sh ./miniconda.sh
+## RUN chmod +x ./miniconda.sh
+## RUN ./miniconda.sh -b -p /opt/conda
+## RUN rm -rf ./miniconda.sh
+## RUN /opt/conda/bin/conda install -y python=${PYTHON_VERSION}
+## RUN /opt/conda/bin/conda clean -ya
+## 
+## # 安装 Apache Spark
+## COPY ./tars/spark-${SPARK_VERSION}-bin-hadoop3.tgz .
+## RUN tar xzf "spark-${SPARK_VERSION}-bin-hadoop3.tgz" && \
+##     rm "spark-${SPARK_VERSION}-bin-hadoop3.tgz" && \
+##     mv "spark-${SPARK_VERSION}-bin-hadoop3" $SPARK_HOME
+## 
+## # 设置环境变量
+## ENV PATH="/opt/conda/bin:$SPARK_HOME/bin:${PATH}"
+## 
+## # 安装其他语言的内核
+## RUN /opt/conda/bin/pip install --no-cache-dir \
+##     'ipykernel' \
+##     'pyspark==${SPARK_VERSION}' \
+##     'findspark'
+## 
+## # 配置Jupyter Notebook
+## RUN jupyter notebook --generate-config && \
+##     echo "c.NotebookApp.ip = '0.0.0.0'" >> /root/.jupyter/jupyter_notebook_config.py && \
+##     echo "c.NotebookApp.port = 8888" >> /root/.jupyter/jupyter_notebook_config.py && \
+##     echo "c.NotebookApp.allow_root = True" >> /root/.jupyter/jupyter_notebook_config.py && \
+##     echo "c.NotebookApp.open_browser = False" >> /root/.jupyter/jupyter_notebook_config.py
+## 
+## USER jovyan 
+## RUN pip install --upgrade pip wheel setuptools
+## RUN pip install sqlalchemy==1.3    && \
+##     pip install pyhive        && \
+##     pip install thrift        && \
+##     pip install sasl          && \
+##     pip install thrift-sasl   && \
+## 	pip install psycopg2
+## 
+## # 暴露Jupyter Notebook端口
+## EXPOSE 8888
+## 
+## # 启动Jupyter Notebook
+## CMD ["jupyter", "notebook"]

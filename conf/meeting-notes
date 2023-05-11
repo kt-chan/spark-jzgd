@@ -1,0 +1,20 @@
+DOH Meeting on 2023-04-24
+
+The Department of Health (DOH) is the Government's health adviser and agency to execute health policies and statutory functions. DOH safeguards the health of the people of Hong Kong through promotive, preventive, curative and rehabilitative services as well as fostering community partnership and international collaboration.
+
+With Covid-19 outbreak in the past 3 years, DOH aims to develop more effective and automated public health and pandemic monitoring system with leverage the experiences and best practices of mainland China on using big data and IoT technologies on related ares. In particularly, DOH is looking for:
+
+1. More automated and accurately data capturing capabilities
+
+There are 53 notifiable infectious diseases. All registered medical practitioners are required to notify DOH for those infectious diseases. But there are many ways for making the notification which includes but not limited to fax, telephone call, post mail, and email. The lengthly and manual processes on collecting those notification and error-prompt on data input contributeds to very bad data quality. DOHs aims rebuild its data collection pipeline such that those notification from various sources can be processed more effective and more automated if possible.
+
+2. More effective data platform for supporting holistic and real-time insights
+
+Data are siloed at many individual files and source systems currently, DOH would like a single data platform to host all those information and provide a single source of truth for data processing and deriving data insights. It is required to processing data from variuos formats, such as semi-structure data in excel, csv, and word, and structured data from databases. It is also required to process the data in streaming or micro-batch mode for more timely analytics.
+
+3. Case management application
+
+There are standard processes on handling every notification that DOH staff would make follow-up calls, information checking, and futher information collection if needed. DOH would like a case management application for supporting these activities. And it is preferred to provide dashboards and reports on monitoring the progresses and effectiveness on the case processing.
+
+
+

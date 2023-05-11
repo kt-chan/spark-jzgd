@@ -1,0 +1,19 @@
+## Hong Kong
+deb http://mirror.xtom.com.hk/ubuntu bionic main restricted universe multiverse
+deb http://mirror.xtom.com.hk/ubuntu bionic-updates main restricted universe multiverse
+deb http://mirror.xtom.com.hk/ubuntu bionic-backports main restricted universe multiverse
+deb http://mirror.xtom.com.hk/ubuntu bionic-security main restricted universe multiverse
+
+
+## ## mirror
+## ## main, restricted, universe, and multiverse repositories
+## deb mirror://mirrors.ubuntu.com/mirrors.txt bionic main restricted universe multiverse
+## deb mirror://mirrors.ubuntu.com/mirrors.txt bionic-updates main restricted universe multiverse
+## deb mirror://mirrors.ubuntu.com/mirrors.txt bionic-backports main restricted universe multiverse
+## deb mirror://mirrors.ubuntu.com/mirrors.txt bionic-security main restricted universe multiverse
+## 
+## ## china
+## deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu/ bionic main restricted universe multiverse
+## deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu/ bionic-updates main restricted universe multiverse
+## deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu/ bionic-backports main restricted universe multiverse
+## deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu/ bionic-security main restricted universe multiverse
