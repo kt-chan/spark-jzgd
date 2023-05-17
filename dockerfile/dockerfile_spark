@@ -49,6 +49,7 @@ RUN useradd -m spark -g hadoop && adduser spark sudo && echo "spark     ALL=(ALL
 
 # Prepare dirs
 RUN mkdir -p /tmp/logs/ && chmod a+w /tmp/logs/ && mkdir /app && chmod a+rwx /app 
+RUN mkdir -p /tmp/spark-events && chmod a+w /tmp/spark-events
 
 # update spark-default.conf
 COPY ./conf/spark-defaults.conf $SPARK_HOME/conf/spark-defaults.conf

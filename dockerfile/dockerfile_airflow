@@ -1,0 +1,24 @@
+FROM apache/airflow:2.3.0
+
+USER root
+## RUN apt-get update && apt-get install -y sasl2-bin libsasl2-2 libsasl2-dev libsasl2-modules libsasl2-modules-gssapi-mit 
+RUN apt-get update && apt-get install -y libsasl2-dev gcc g++
+
+USER airflow
+RUN pip install --user --upgrade pip wheel setuptools 
+RUN pip install --user apache-airflow-providers-postgres==4.1.0 && \
+	pip install --user apache-airflow-providers-apache-hive==3.0.0
+
+## Required library for pyhive 
+RUN pip install --user sqlalchemy  && \
+	pip install --user pyhive  && \
+	pip install --user thrift  && \
+	pip install --user sasl  && \
+	pip install --user thrift-sasl 
+
+
+USER root
+ADD ./scripts/airflow_init.sh $AIRFLOW_HOME/init-scripts/run.sh
+RUN chmod -R 755 $AIRFLOW_HOME/init-scripts
+
+USER airflow

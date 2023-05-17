@@ -1,0 +1,25 @@
+FROM python:3.7
+RUN apt-get update && apt-get install libsasl2-dev libsasl2-modules
+RUN pip install --upgrade pip wheel setuptools
+
+RUN pip install markupsafe==2.0.1 && \
+    pip install wtforms==2.3.3 && \
+	pip install sasl==0.2.1 && \
+	pip install thrift==0.10.0 && \
+	pip install thrift-sasl==0.3.0 && \
+    pip install dbt-postgres==1.1.0 && \
+	pip install dbt-spark==1.1.0 && \
+	pip install dbt-spark[PyHive]==1.1.0
+
+
+RUN apt-get install openssh-server -y
+RUN echo "Port 22" >> /etc/ssh/sshd_config
+#RUN echo 'root:password' | chpasswd
+RUN echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
+
+ADD scripts/dbt_init.sh /root/init.sh
+RUN chmod +x /root/init.sh
+
+ENTRYPOINT [ "/root/init.sh" ]

@@ -7,3 +7,7 @@ sudo docker build -f ./dockerfile/dockerfile_hadoop -t hadoop:3.2.3 -t hadoop:st
 sudo docker build -f ./dockerfile/dockerfile_spark -t spark:3.3.1 -t spark:stable .
 sudo docker build -f ./dockerfile/dockerfile_presto -t presto:0.261  -t presto:stable .
 sudo docker build -f ./dockerfile/dockerfile_jupyter -t jupyter-spark:3.3.1 -t jupyter-spark:stable .
+
+# download postgres:13 as local images
+sudo docker image pull postgres:13 
+sudo docker tag postgres:13 postgres:stable

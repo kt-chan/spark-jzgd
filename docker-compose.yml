@@ -125,7 +125,7 @@ x-minio-common: &minio-common
     
 services:
   postgres-airflow:
-    image: postgres:13
+    image: postgres:stable
     container_name: postgres-airflow
     environment:
       POSTGRES_USER: ${AIRFLOW_POSTGRES_USER}
@@ -143,7 +143,7 @@ services:
     restart: always
 
   postgres-dbt:
-    image: postgres:13
+    image: postgres:stable
     container_name: postgres-dbt
     environment:
       POSTGRES_USER: ${DBT_POSTGRES_USER}
@@ -164,7 +164,7 @@ services:
       - donotstart
       
   postgres-hms:
-    image: postgres:13
+    image: postgres:stable
     container_name: postgres-hms
     environment:
       POSTGRES_USER: ${HMS_POSTGRES_USER}
@@ -490,6 +490,7 @@ services:
     ports:
       - ${SPARK_MASTER_PORT}:${SPARK_MASTER_PORT}
       - ${SPARK_MASTER_WEBUI_PORT}:${SPARK_MASTER_WEBUI_PORT}
+      - ${SPARK_HISTORY_SERVER_PORT}:${SPARK_HISTORY_SERVER_PORT}
     user: spark
     entrypoint: 
       - runMaster.sh
@@ -646,7 +647,7 @@ services:
       - runHMS.sh
     healthcheck:
       test: ["CMD-SHELL", "netstat -anlp | grep -c 9083"]
-      interval: 10s
+      interval: 30s
       retries: 3
     restart: always
     depends_on:

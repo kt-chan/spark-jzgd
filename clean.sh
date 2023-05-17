@@ -3,12 +3,12 @@
 #docker-compose down --rmi all --volumes 
 sudo docker-compose down
 
-if [[ -n $(docker ps -a -q) ]]; then
-	sudo docker rm -f $(docker ps -a -q)
+if [[ -n $(sudo docker ps -a -q) ]]; then
+	sudo docker rm -f $(sudo docker ps -a -q)
 fi
 
-if [[ -n $(docker volume ls -q) ]]; then
-	sudo docker volume rm $(docker volume ls -q)
+if [[ -n $(sudo docker volume ls -q) ]]; then
+	sudo docker volume rm $(sudo docker volume ls -q)
 fi
 
 

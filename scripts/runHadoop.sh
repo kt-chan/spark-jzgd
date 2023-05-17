@@ -19,6 +19,7 @@ start-dfs.sh
 sleep 10
 
 hdfs dfs -mkdir -p /tmp/hive
+hdfs dfs -mkdir -p /tmp/spark-logs
 hdfs dfs -chmod -R 777 /tmp
 
 hdfs dfs -mkdir -p /data
