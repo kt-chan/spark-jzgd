@@ -49,7 +49,7 @@ The objective is use data turbo with SQL semantic cache service to accelerate th
 * python ./bin/SQL1-PySpark-RunQuery.py -f ./conf/default.conf 
  
 5. Measure the output time for the log output line with prefix "Finished tb_test_qf_stat Insert Query ..."
-* python ./bin/SQL1-PySpark-DataGen.py -f ./conf/default.conf 
+
 
 
 ## Docker Compose Commands
