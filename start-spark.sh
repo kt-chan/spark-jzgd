@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-sudo docker-compose build
-sudo docker-compose up jupyter-notebook -d
+sudo -- sh -c  'docker-compose build'
+sudo -- sh -c  'docker-compose up jupyter-notebook -d'
 

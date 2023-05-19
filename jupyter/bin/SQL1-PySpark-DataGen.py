@@ -4,7 +4,7 @@
 # !pip install --upgrade pip
 # !pip3 install --upgrade pandas
 
-# In[ ]:
+# In[1]:
 
 
 import sys,os,logging
@@ -48,13 +48,14 @@ for (each_key, each_val) in config_object.items(config_object["SYSTEMINFO"].name
     logging.info( each_key + ":" + each_val)
 
 
-# In[ ]:
+# In[2]:
 
 
 import math
 import pyspark
 import pandas as pd
 import numpy as np
+import gc
 
 from pyspark.sql import SQLContext, SparkSession
 from pyspark.sql.functions  import from_unixtime
@@ -69,20 +70,45 @@ logging.info("PySpark Version: " + pyspark.__version__)
 logging.info("Pandas Version: " + pd.__version__)
 
 
-# In[ ]:
+# In[3]:
 
 
 import threading
 from time import sleep
 
-df = pd.DataFrame()   
+
 taskdone = False
 alphabet = list('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
 LENGTH = 10
 
+cols=["f01", "f02","f03", "f04", "f05", "f06", "f07", "f08", "f09", "f10","f11","f12","f13","f14","f15","f16","f17","f18","f19","f20","f21","f22","f23","f24","f25","f26","f27","f28","f29","f30","f31" ]
+random_txtcols=["f03","f05","f08","f09","f11","f12","f13","f16","f17","f18","f20","f21","f23","f24","f25","f26","f27","f28","f29"]
+
+def sizeof_fmt(num, suffix='B'):
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f %s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f %s%s" % (num, 'Yi', suffix)
+
 def getNumberOfExecutor():
-    number_of_workers = len(spark.sparkContext._jsc.sc().statusTracker().getExecutorInfos()) - 1
+    global spark
+    sc=spark.sparkContext
+    number_of_workers = len(sc._jsc.sc().statusTracker().getExecutorInfos()) - 1
     return number_of_workers
+
+def delete_path(host, path):
+    global spark
+    sc=spark.sparkContext
+    URI           = sc._gateway.jvm.java.net.URI
+    Path          = sc._gateway.jvm.org.apache.hadoop.fs.Path
+    FileSystem    = sc._gateway.jvm.org.apache.hadoop.fs.FileSystem
+    Configuration = sc._gateway.jvm.org.apache.hadoop.conf.Configuration
+    fs = FileSystem.get(URI(host), Configuration())
+    logging.info("deleting hdfs directory: " + host + path)
+    if fs.exists(Path(path)) :
+        fs.delete(Path(path), True)
+        logging.info("deleted " + path)
 
 def progressbar():
     logging.info('Start')
@@ -91,17 +117,29 @@ def progressbar():
         logging.info('.')
 
 def inittask(droptable = False):
-    sqlContext.sql("create database if not exists sample;")
-    sqlContext.sql("use sample;")
+    global SPARK_WAREHOUSE_DIR
     
     if(droptable):
         logging.info('dropping sample.* tables')
         sqlContext.sql("drop table if exists sample.tb_test;")
         sqlContext.sql("drop table if exists sample.tb_sev_u;")
         sqlContext.sql("drop table if exists sample.tb_test_qf_stat;")
+        sqlContext.sql("drop table if exists sample.tb_test_num_tmp;")
+        sqlContext.sql("drop table if exists sample.tb_test_qf_lastest;")
+        # Delete the HDFS directory for failure case
+        pos=SPARK_WAREHOUSE_DIR.index("/", len("hdfs://"))
+        hdfshost=SPARK_WAREHOUSE_DIR[:pos]
+        hdfsdir=SPARK_WAREHOUSE_DIR[pos:]+"/sample.db"
+        logging.info('deleting hdfs directory: ' + hdfsdir)
+        delete_path(hdfshost, hdfsdir)
+    
+    sqlContext.sql("create database if not exists sample;")
+    sqlContext.sql("use sample;")
+    
+    return True
     
 
-def gendata_tbsevu(scale = 1, batch_size = 100000):
+def gendata_tbsevu(rounds = 1, batch_size = 100000):
     logging.info("generating data for tb_sev_u ...")
     
     sqlContext.sql("""
@@ -112,166 +150,117 @@ def gendata_tbsevu(scale = 1, batch_size = 100000):
         where f02 < 19218983880 or f02 > 19218983890
         ORDER BY RAND () 
         limit {batch}
-    ;""".format(batch=batch_size) )
+    ;""".format(batch=int(rounds*batch_size)))
 
     logging.info("finished loading data for tb_sev_u with " + str(batch_size) + " rows.")    
     
     
-def gendata_tbtest_noise(scale_rounds = 1, batch_size = 100000, timespan_days = 31):
-    
-    logging.info("generating noise data for tb_test ...")
+def gendata_tbtest_noise(fromTS, toTS, scale_rounds = 1, batch_size = 100000):
+    global random_txtcols
+    scale_rounds = scale_rounds + 1
     ## for 100,000 rows of data with 25MB Storage Data Without Replication
-    global df
-    target_ts_int=None
-    partitions = timespan_days * 24
+    df = pd.DataFrame()   
+    initial_ts_int =  int(fromTS.value/10**9)
+    target_ts_int =  int(toTS.value/10**9)
     
-    for i in range(scale_rounds):
-
-        if 'df' in globals():
-            del df
-        
-        df = pd.DataFrame()    
-        
-        logging.info("running round: " + str(i+1) + " of total " + str(scale_rounds)  +" rounds, with batchsize = " + str(batch_size) + ".")
-
-        df = pd.DataFrame()
-
-        cols=["f01", "f02","f03", "f04", "f05", "f06", "f07", "f08", "f09", "f10","f11","f12","f13","f14","f15","f16","f17","f18","f19","f20","f21","f22","f23","f24","f25","f26","f27","f28","f29","f30","f31" ]
-        random_txtcols=["f03","f05","f08","f09","f11","f12","f13","f16","f17","f18","f20","f21","f23","f24","f25","f26","f27","f28","f29"]
-
-        current_ts = pd.Timestamp.now()
-        current_ts_int = int(pd.to_datetime(current_ts).value/10**9)
-        if target_ts_int is None:
-            initial_ts = pd.to_datetime(current_ts - pd.Timedelta(days=timespan_days))
-        else:
-            initial_ts = target_ts;
-        
-        target_ts =  pd.to_datetime(initial_ts + pd.Timedelta(hours=math.ceil(partitions / scale_rounds)))
-        initial_ts_int =  int(initial_ts.value/10**9)
-        target_ts_int =  int(target_ts.value/10**9)
-        
-        df1 = pd.DataFrame(np.random.randint(initial_ts_int, target_ts_int, size=(batch_size,1)),  columns=list(["f01"]))
-        df2 = pd.DataFrame(np.random.randint(19200000000,19200000000+20000000,size=(batch_size,2)), columns=list(["f02", "f04"])) 
-        df6 = pd.DataFrame(np.random.randint(0, 10, size=(batch_size,5)),  columns=list(["f06", "f07", "f10", "f15", "f19"]))
-        df14 = pd.DataFrame(np.random.randint(48, 51, size=(batch_size,1)),  columns=list(["f14"]))
-        df22 = pd.DataFrame(np.random.randint(1, 10, size=(batch_size,1)),  columns=list(["f22"]))
-        df30 = pd.DataFrame(initial_ts_int, index=range(batch_size),  columns=list(["f30"]))
-        df31 = pd.DataFrame(target_ts_int, index=range(batch_size),  columns=list(["f31"]))
-
-        for k in random_txtcols: 
-            np_batchsize = None
-            if k == 'f16' :
-                np_batchsize = np.random.choice(np.array(alphabet, dtype="|U1"), [batch_size, math.ceil(1 + LENGTH * (np.random.randint(1, 30) / 10))])
-            else :
-                np_batchsize = np.random.choice(np.array(alphabet, dtype="|U1"), [batch_size, LENGTH])
-                
-            df0 = pd.DataFrame( ["".join(np_batchsize[i]) for i in range(len(np_batchsize))], columns=[k])
-            df[k] = df0[k]
-
-        df = pd.concat([df1,df2, df6, df14, df22, df30, df31, df], axis=1, join='inner')
-
-        df = df[cols]
-        logging.info("Memory Usage: " + f'{df.memory_usage(deep=True).sum():,}'  + " Bytes")
-        
-        logging.info("creating spark data frame for partitioins from " + str(pd.to_datetime(df['f01'].min(), unit='s')) + ' to ' +  str(pd.to_datetime(df['f01'].max(), unit='s')) + '... ')
-        sparkDF = spark.createDataFrame(df)
-        sparkDF = sparkDF.withColumn("cp", from_unixtime(sparkDF["f01"], "yyyyMMddHH"))
-        sparkDF = sparkDF.withColumn("ld", from_unixtime(sparkDF["f01"], "yyyyMMddHH"))
-        sparkDF = sparkDF.withColumn("f30", from_unixtime(sparkDF["f30"], "yyyyMMddHH"))
-        sparkDF = sparkDF.withColumn("f31", from_unixtime(sparkDF["f31"], "yyyyMMddHH"))
-        #sparkDF.coalesce(getNumberOfExecutor()).write.mode("append").partitionBy( ["cp","ld"]).bucketBy(32, "f02").sortBy("f01").format("orc").saveAsTable("tb_test")
-        logging.info("writing to hive table sample.tb_test ...")
-        sparkDF.coalesce(getNumberOfExecutor()).write.mode("append").partitionBy( ["cp","ld"]).format("orc").saveAsTable("tb_test")
-
-        finish_ts = pd.Timestamp.now()
-        spark.catalog.clearCache()
-        logging.info("finished round: "+ str(i+1) + " for " + str(batch_size) + " rows with " + str( (finish_ts - current_ts).seconds)  + " seconds")
-
-def gendata_tbtest_target(scale_rounds = 1, batch_size = 100000, timespan_days = 31):
+    logging.info("Round " + str(scale_rounds) + ": generating noise data for tb_test with batch size "+ str(batch_size) + " rows, from " + str(initial_ts_int) + " to " +  str(target_ts_int) + ".")
+                 
+    df1 = pd.DataFrame(np.random.randint(initial_ts_int, target_ts_int, size=(batch_size,1)),  columns=list(["f01"]))
+    df2 = pd.DataFrame(np.random.randint(19200000000,19200000000+20000000,size=(batch_size,2)), columns=list(["f02", "f04"])) 
+    df6 = pd.DataFrame(np.random.randint(0, 10, size=(batch_size,5)),  columns=list(["f06", "f07", "f10", "f15", "f19"]))
+    df14 = pd.DataFrame(np.random.randint(48, 51, size=(batch_size,1)),  columns=list(["f14"]))
+    df22 = pd.DataFrame(np.random.randint(1, 10, size=(batch_size,1)),  columns=list(["f22"]))
+    df30 = pd.DataFrame(np.random.randint(initial_ts_int,target_ts_int,size=(batch_size,1)),  columns=list(["f30"]))
+    df31 = df30
+    df31 = df31.rename(columns={"f30": "f31"})
     
-    logging.info("generating target data for tb_test ...")
+    for k in random_txtcols: 
+        np_batchsize = None
+        if k == 'f16' :
+            np_batchsize = np.random.choice(np.array(alphabet, dtype="|U1"), [batch_size, math.ceil(1 + LENGTH * (np.random.randint(1, 30) / 10))])
+        else :
+            np_batchsize = np.random.choice(np.array(alphabet, dtype="|U1"), [batch_size, LENGTH])
+
+        df0 = pd.DataFrame( ["".join(np_batchsize[i]) for i in range(len(np_batchsize))], columns=[k])
+        df[k] = df0[k]
+
+    df = pd.concat([df1,df2, df6, df14, df22, df30, df31, df], axis=1, join='inner')
+
+    df = df[cols]
+    logging.info("Memory Usage: " + f'{df.memory_usage(deep=True).sum():,}'  + " Bytes")
+
+    logging.info("creating spark data frame for partitioins from " + str(pd.to_datetime(df['f01'].min(), unit='s')) + ' to ' +  str(pd.to_datetime(df['f01'].max(), unit='s')) + '... ')
+    sparkDF = spark.createDataFrame(df)
+    sparkDF = sparkDF.withColumn("cp", from_unixtime(sparkDF["f01"], "yyyyMMddHH").cast("BigInt"))
+    sparkDF = sparkDF.withColumn("ld", from_unixtime(sparkDF["f01"], "yyyyMMddHH").cast("BigInt"))
+    sparkDF = sparkDF.withColumn("f30", from_unixtime(sparkDF["f30"], "yyyyMMddHH").cast("BigInt"))
+    sparkDF = sparkDF.withColumn("f31", from_unixtime(sparkDF["f31"], "yyyyMMddHH").cast("BigInt"))
+    #sparkDF.coalesce(getNumberOfExecutor()).write.mode("append").partitionBy( ["cp","ld"]).bucketBy(32, "f02").sortBy("f01").format("orc").saveAsTable("tb_test")
+    logging.info("writing to hive table sample.tb_test ...")
+    
+    current_ts = pd.Timestamp.now()
+    
+    sparkDF.coalesce(getNumberOfExecutor()).write.mode("append").partitionBy( ["cp","ld"]).format("orc").option("compression","ZLIB").saveAsTable("sample.tb_test")
+    finish_ts = pd.Timestamp.now()
+    
+    spark.catalog.clearCache()
+    gc.collect()
+    logging.info("finished round " + str(scale_rounds) +  " with batch size "+ str(batch_size) + " rows with " + str( (finish_ts - current_ts).seconds)  + " seconds")
+        
+
+def gendata_tbtest_target(fromTS, toTS, scale_rounds = 1, batch_size = 100000):
+    global random_txtcols
+    scale_rounds = scale_rounds + 1
     ## for 100,000 rows of data with 25MB Storage Data Without Replication
-    global df
-    target_ts_int=None
-    partitions = timespan_days * 24
+    df = pd.DataFrame()   
+    initial_ts_int =  int(fromTS.value/10**9)
+    target_ts_int =  int(toTS.value/10**9)
+
+    logging.info("Round " + str(scale_rounds) + ": generating target data for tb_test with batch size "+ str(batch_size) + " rows, from " + str(initial_ts_int) + " to " +  str(target_ts_int) + ".")
+                 
+    df1 = pd.DataFrame(np.random.randint(initial_ts_int, target_ts_int, size=(batch_size,1)),  columns=list(["f01"]))
+    df2 = pd.DataFrame(np.random.randint(19218983880,19218983880+10,size=(batch_size,1)), columns=list(["f02"])) 
+    df4 = pd.DataFrame(np.random.randint(19200000000,19200000000+20000000,size=(batch_size,1)), columns=list(["f04"])) 
+    df6 = pd.DataFrame(0, index=range(batch_size),  columns=list(["f06"]))
+    df7 = pd.DataFrame(7, index=range(batch_size),  columns=list(["f07"]))
+    df10 = pd.DataFrame(np.random.randint(0, 10, size=(batch_size,3)),  columns=list(["f10", "f15", "f19"]))
+    df14 = pd.DataFrame(49, index=range(batch_size),  columns=list(["f14"]))
+    df22 = pd.DataFrame(3, index=range(batch_size),  columns=list(["f22"]))
+    df30 = pd.DataFrame(np.random.randint(initial_ts_int,target_ts_int,size=(batch_size,1)),  columns=list(["f30"]))
+    df31 = df30
+    df31 = df31.rename(columns={"f30": "f31"})
+
+    for k in random_txtcols: 
+        if k == 'f16' :
+            np_batchsize =  pd.DataFrame("Great you found me !", index=range(batch_size),  columns=list(["f16"]))
+        else :
+            np_batchsize = np.random.choice(np.array(alphabet, dtype="|U1"), [batch_size, LENGTH])
+            np_batchsize = pd.DataFrame( ["".join(np_batchsize[i]) for i in range(len(np_batchsize))], columns=[k])
+
+        df[k] = np_batchsize
+
+    df = pd.concat([df1,df2, df4, df6, df7, df10, df14, df22, df30, df31, df], axis=1, join='inner')
+
+    df = df[cols]
+
+    logging.info("Memory Usage: " + f'{df.memory_usage(deep=True).sum():,}'  + " Bytes")
+
+    logging.info("creating spark data frame for partitioins from " + str(pd.to_datetime(df['f01'].min(), unit='s')) + ' to ' +  str(pd.to_datetime(df['f01'].max(), unit='s')) + '... ')
+    sparkDF = spark.createDataFrame(df)
+    sparkDF = sparkDF.withColumn("cp", from_unixtime(sparkDF["f01"], "yyyyMMddHH").cast("BigInt"))
+    sparkDF = sparkDF.withColumn("ld", from_unixtime(sparkDF["f01"], "yyyyMMddHH").cast("BigInt"))
+    sparkDF = sparkDF.withColumn("f30", from_unixtime(sparkDF["f30"], "yyyyMMddHH").cast("BigInt"))
+    sparkDF = sparkDF.withColumn("f31", from_unixtime(sparkDF["f31"], "yyyyMMddHH").cast("BigInt"))
+    #sparkDF.coalesce(getNumberOfExecutor()).write.mode("append").partitionBy( ["cp","ld"]).bucketBy(32, "f02").sortBy("f01").format("orc").saveAsTable("tb_test")
     
-    for i in range(scale_rounds):
-        if 'df' in globals():
-            del df
-
-        df = pd.DataFrame()   
-
-        cols=["f01", "f02","f03", "f04", "f05", "f06", "f07", "f08", "f09", "f10","f11","f12","f13","f14","f15","f16","f17","f18","f19","f20","f21","f22","f23","f24","f25","f26","f27","f28","f29","f30","f31" ]
-        random_txtcols=["f03","f05","f08","f09","f11","f12","f13","f16","f17","f18","f20","f21","f23","f24","f25","f26","f27","f28","f29"]
-
-        current_ts = pd.Timestamp.now()
-        current_ts_int = int(pd.to_datetime(current_ts).value/10**9)
-        if target_ts_int is None:
-            initial_ts = pd.to_datetime(current_ts - pd.Timedelta(days=timespan_days))
-        else:
-            initial_ts = target_ts;
-
-        target_ts =  pd.to_datetime(initial_ts + pd.Timedelta(hours=math.ceil(partitions / scale_rounds)))
-        initial_ts_int =  int(initial_ts.value/10**9)
-        target_ts_int =  int(target_ts.value/10**9)
-
-        ## /*
-        ##
-        ## +---+-----------+------------------+---+---+---+----------+----------+
-        ## |f22|f02        |f16               |cnt|f06|f07|bd        |ad        |
-        ## +---+-----------+------------------+---+---+---+----------+----------+
-        ## |3  |19218983709|xfhtE3h5CYgGOWhOKk|1  |0  |7  |2023-03-19|2023031415|
-        ## |5  |19219966684|ygeEVbANtFFi8Y1hVk|1  |4  |4  |2023-03-19|2023031415|
-        ## |3  |19218120415|rUpWrl5GvPKANvoVQA|1  |6  |2  |2023-03-19|2023031415|
-        ## |8  |19204926044|giFVrAhopgs0xLBbqC|1  |9  |4  |2023-03-19|2023031415|
-        ## |3  |19200131747|WXCnls2FOur2a2eDrx|1  |4  |7  |2023-03-19|2023031415|
-        ## |9  |19213837980|Uvsg7bYQhZAddPp4fb|1  |0  |7  |2023-03-19|2023031415|
-        ## |8  |19206179720|7KZIluL2WBkkQHI6M4|1  |5  |0  |2023-03-19|2023031415|
-        ## |8  |19204624908|MNwN3ensBpDhy08k18|1  |1  |3  |2023-03-19|2023031415|
-        ## |1  |19219995818|GVkuR9l4m3ZQQO9duG|1  |5  |4  |2023-03-19|2023031415|
-        ## |4  |19219858050|1U2HdpMfVarddjhWNl|1  |0  |6  |2023-03-19|2023031415|
-        ## +---+-----------+------------------+---+---+---+----------+----------+
-        ## 
-        ## */
-
-        df1 = pd.DataFrame(np.random.randint(initial_ts_int, target_ts_int, size=(batch_size,1)),  columns=list(["f01"]))
-        df2 = pd.DataFrame(np.random.randint(19218983880,19218983880+10,size=(batch_size,1)), columns=list(["f02"])) 
-        df4 = pd.DataFrame(np.random.randint(19200000000,19200000000+20000000,size=(batch_size,1)), columns=list(["f04"])) 
-        df6 = pd.DataFrame(0, index=range(batch_size),  columns=list(["f06"]))
-        df7 = pd.DataFrame(7, index=range(batch_size),  columns=list(["f07"]))
-        df10 = pd.DataFrame(np.random.randint(0, 10, size=(batch_size,3)),  columns=list(["f10", "f15", "f19"]))
-        df14 = pd.DataFrame(np.random.randint(48, 51, size=(batch_size,1)),  columns=list(["f14"]))
-        df22 = pd.DataFrame(3, index=range(batch_size),  columns=list(["f22"]))
-        df30 = pd.DataFrame(np.random.randint(initial_ts_int, target_ts_int, size=(batch_size,2)),  columns=list(["f30", "f31"]))
-
-        for k in random_txtcols: 
-            if k == 'f16' :
-                np_batchsize =  pd.DataFrame("Great you found me !", index=range(batch_size),  columns=list(["f16"]))
-            else :
-                np_batchsize = np.random.choice(np.array(alphabet, dtype="|U1"), [batch_size, LENGTH])
-                np_batchsize = pd.DataFrame( ["".join(np_batchsize[i]) for i in range(len(np_batchsize))], columns=[k])
-
-            df[k] = np_batchsize
-
-        df = pd.concat([df1,df2, df4, df6, df7, df10,df14, df22, df30, df], axis=1, join='inner')
-
-        df = df[cols]
-        
-        logging.info("Memory Usage: " + f'{df.memory_usage(deep=True).sum():,}'  + " Bytes")
-
-        logging.info("creating spark data frame for partitioins from " + str(pd.to_datetime(df['f01'].min(), unit='s')) + ' to ' +  str(pd.to_datetime(df['f01'].max(), unit='s')) + '... ')
-        sparkDF = spark.createDataFrame(df)
-        sparkDF = sparkDF.withColumn("cp", from_unixtime(sparkDF["f01"], "yyyyMMddHH"))
-        sparkDF = sparkDF.withColumn("ld", from_unixtime(sparkDF["f01"], "yyyyMMddHH"))
-        sparkDF = sparkDF.withColumn("f30", from_unixtime(sparkDF["f30"], "yyyyMMddHH"))
-        sparkDF = sparkDF.withColumn("f31", from_unixtime(sparkDF["f31"], "yyyyMMddHH"))
-        #sparkDF.coalesce(getNumberOfExecutor()).write.mode("append").partitionBy( ["cp","ld"]).bucketBy(32, "f02").sortBy("f01").format("orc").saveAsTable("tb_test")
-        logging.info("writing to hive table sample.tb_test ...")
-        sparkDF.coalesce(getNumberOfExecutor()).write.mode("append").partitionBy( ["cp","ld"]).format("orc").saveAsTable("tb_test")
-
-        finish_ts = pd.Timestamp.now()
-        spark.catalog.clearCache()
-        logging.info("finished " + str(batch_size) + " rows with " + str( (finish_ts - current_ts).seconds)  + " seconds")
+    logging.info("writing to hive table sample.tb_test ...")
+    current_ts = pd.Timestamp.now()
+    sparkDF.coalesce(getNumberOfExecutor()).write.mode("append").partitionBy( ["cp","ld"]).format("orc").option("compression","ZLIB").saveAsTable("sample.tb_test")
+    finish_ts = pd.Timestamp.now()
+    
+    spark.catalog.clearCache()
+    gc.collect()
+    logging.info("finished round " + str(scale_rounds) +  " with batch size "+ str(batch_size) + " rows with " + str( (finish_ts - current_ts).seconds)  + " seconds")
 
     
 def gendata_tbtest(scale = 1, batch_size = 100000, timespan_days = 31):
@@ -280,27 +269,49 @@ def gendata_tbtest(scale = 1, batch_size = 100000, timespan_days = 31):
     scale_unit =  math.ceil(batch_size/(100000/25))
     scale_rounds = math.ceil(scale_factor/scale_unit)
     
-    
     #Testing
     if debugMode :
-        logging.info("Testing with " + str(1) +" batches data instead of " + str(scale_rounds) +" ...., remove this block later.")
-        scale_rounds = 1    
-            
-    gendata_tbtest_noise(scale_rounds, batch_size, timespan_days)
-    gendata_tbtest_target(scale_rounds, math.ceil(batch_size/10), timespan_days)
+        logging.warning("Testing with " + str(2) +" rounds data instead of " + str(scale_rounds) +" rounds, remove this by settign debugMode = False in config file.")
+        scale_rounds = 2
+        
+    target_ts=None
+    partitions = timespan_days * 24
+    current_ts = pd.Timestamp.now()
+    
+    for i in range(scale_rounds):
+        
+        if debugMode :            
+            for name, size in sorted(((name, sys.getsizeof(value)) for name, value in list(globals().items())), key= lambda x: -x[1])[:10]:
+                logging.info("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
+            for name, size in sorted(((name, sys.getsizeof(value)) for name, value in list(locals().items())), key= lambda x: -x[1])[:10]:
+                logging.info("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
+        
+        if target_ts is None:
+            initial_ts = pd.to_datetime(current_ts - pd.Timedelta(days=timespan_days))
+        else:
+            initial_ts = target_ts;
+
+        target_ts =  pd.to_datetime(initial_ts + pd.Timedelta(hours=math.ceil(partitions / scale_rounds)))
+
+        gendata_tbtest_noise(initial_ts, target_ts, i, batch_size)
+        gendata_tbtest_target(initial_ts, target_ts, i, math.ceil(batch_size/10))
+
+    # Finish data generation for tb_test
+    # Then we load the data into tb_serv_u
+    logging.info("generating data for tb_servu")
+    gendata_tbsevu(scale_rounds, batch_size)
     
     sqlContext.sql("use sample;")
     sqlContext.sql("show tables").show()
 
-def gendata(scale_gb = 1, batch_size_k = 100, timespan_days = 31):
+def gendata(scale_gb = 1, batch_size = 100, timespan_days = 31):
     logging.info("number_of_workers: " + str(getNumberOfExecutor()) + ".")
-    gendata_tbtest(scale_gb, batch_size_k * 1000, timespan_days )
-    gendata_tbsevu(scale_gb, batch_size_k * 1000)
+    gendata_tbtest(scale_gb, batch_size * 1000, timespan_days )
     
     
-def longtask(scale_gb = 1, batch_size_k = 100, timespan_days = 31, droptTable = False):
+def longtask(scale_gb = 1, batch_size = 100, timespan_days = 31, droptTable = False):
     inittask(droptTable)
-    gendata(scale_gb, batch_size_k, timespan_days)
+    gendata(scale_gb, batch_size, timespan_days)
     global taskdone
     taskdone = True
 
@@ -320,7 +331,7 @@ t2.join()
 logging.info('Done!')
 
 
-# In[ ]:
+# In[4]:
 
 
 logging.info("ANALYZE TABLE sample.tb_test COMPUTE STATISTICS FOR ALL COLUMNS  ;")
@@ -329,7 +340,7 @@ df = sqlContext.sql("DESCRIBE EXTENDED sample.tb_test;")
 df.show(100,False)
 
 
-# In[ ]:
+# In[5]:
 
 
 logging.info("ANALYZE TABLE sample.tb_sev_u COMPUTE STATISTICS FOR ALL COLUMNS  ;")
@@ -338,10 +349,268 @@ df = sqlContext.sql("DESCRIBE EXTENDED sample.tb_sev_u;")
 df.show(100,False)
 
 
-# In[ ]:
+# In[6]:
+
+
+logging.info("create table if not exists sample.tb_test_qf_stat ...")
+    
+sqlContext.sql("use sample;") 
+sqlContext.sql("drop table if exists sample.tb_test_qf_stat");
+
+stmt = """
+        create table if not exists sample.tb_test_qf_stat(
+        f22 string,
+        f02 string,
+        f16 string,
+        cnt bigint,
+        f06    string,
+        f07    string
+        )partitioned by (bd string, ad bigint)
+        ;
+       """
+logging.info("Executing query: \n" + stmt)
+sqlContext.sql(stmt)
+logging.info("Table sample.tb_test_qf_stat created.")
+
+
+logging.info("create table if not exists sample.tb_test_qf_stat_log ...")
+    
+sqlContext.sql("use sample;") 
+sqlContext.sql("drop table if exists sample.tb_test_qf_stat_log");
+
+stmt = """
+        create table if not exists sample.tb_test_qf_stat_log(
+        batchId    string
+        )
+        ;
+       """
+logging.info("Executing query: \n" + stmt)
+sqlContext.sql(stmt)
+logging.info("Table sample.tb_test_qf_stat_log created.")
+
+
+# In[7]:
+
+
+def create_view_tb_test_qf_tmp1(batchId, dateFrom, dateTo):
+    
+    logging.info("CREATE OR REPLACE TEMPORARY VIEW tb_test_qf_tmp1  ...")
+
+    sqlContext.sql("use sample;") 
+    query = """
+        CREATE OR REPLACE TEMPORARY VIEW tb_test_qf_tmp1 
+        as
+        with tb_test_qf_tmp as (
+            select trim(f02) as f02, trim(f04) as f04,trim(f22) as f22,
+            regexp_replace(regexp_replace(regexp_replace(trim(f16),'\\\?+','\?') ,'0+','0'),'[ \t]+',' ') as f16,
+            from_unixtime(unix_timestamp(cast(f30 as string),'yyyyMMddHH'), 'yyyy-MM-dd-HH')  as bd,
+            {batchId} as ad,
+            trim(f06) as f06,trim(f07) as f07
+            from tb_test t
+            where f31 >= {date1} and f31 < {date2} and f14 = '49'
+        ),
+        tb_test_qf_tmp1 as (
+        select a.f22,a.f02,a.f16, count(distinct a.f04) as cnt,a.bd ,a.ad,
+        a.f06,a.f07
+        from tb_test_qf_tmp a
+        left join tb_sev_u b on a.f02 = b.id
+        where a.f02 is not null and b.id is null
+        and length(a.f16) > 10
+        group by a.f22,a.f02,a.f16,a.bd,a.ad,a.f06,a.f07 
+        having cnt > 10
+        )
+        select * from tb_test_qf_tmp1
+        ;
+    """.format(batchId=batchId, date1=dateFrom, date2=dateTo)
+
+    logging.info("\nExecuting query: \n" + query)
+    sqlContext.sql(query) 
+    logging.info("View tb_test_qf_tmp1 created.")
+
+    
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+    
+today = datetime.now()
+date1  = today - relativedelta(days=7)
+date2  = today - relativedelta(days=2)
+batchId = date2.strftime("%Y%m%d%H")
+dateFrom = date1.strftime("%Y%m%d%H")
+dateTo = date2.strftime("%Y%m%d%H")
+
+create_view_tb_test_qf_tmp1(batchId, dateFrom, dateTo)
+
+query = "alter table tb_test_qf_stat drop if exists partition (ad = {batchId})".format(batchId=batchId)
+logging.info("Executing query: " + query)
+sqlContext.sql(query);
+logging.info("table sample.tb_test_qf_stat partition " + str(batchId) + " dropped.")
+
+sqlContext.sql("set hive.exec.dynamic.partition.mode=nonstrict")
+query = """
+ insert into sample.tb_test_qf_stat partition(bd, ad)
+ select f22,f02,f16,cnt,f06,f07,bd,ad
+ from tb_test_qf_tmp1
+;
+"""
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+sqlContext.sql(query) 
+runfinishtime = datetime.now()
+
+sqlContext.sql("set hive.exec.dynamic.partition.mode=strict")
+logging.info("Finished tb_test_qf_stat Insert Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+query = """
+ insert into sample.tb_test_qf_stat_log
+ select {batchId}
+ from tb_test_qf_tmp1
+;
+""".format(batchId=str(batchId))
+
+logging.info("\nExecuting query: \n" + query)
+sqlContext.sql(query) 
+logging.info("\nFinished query: \n" + query)
+
+
+# df = sqlContext.sql("select * from tb_test_qf_tmp1 ");
+# df.show(100, False)
+
+# In[8]:
+
+
+sqlContext.sql("use sample;") 
+query = "drop table if exists sample.tb_test_qf_lastest;"
+logging.info("\nExecuting query: \n" + query)
+sqlContext.sql(query) 
+logging.info("\nFinished query: \n" + query)
+
+query = """
+create table  if not exists tb_test_qf_lastest as
+select f22,f02,f16,cnt,bd,f06,f07 from
+( select *, row_number() over(partition by f02 order by bd desc) rn from sample.tb_test_qf_stat) t
+where t.rn =1;
+"""
+
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+sqlContext.sql(query) 
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+query = """select * from tb_test_qf_lastest;""";
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+df = sqlContext.sql(query) 
+df.show(100, False)
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+
+# In[9]:
+
+
+sqlContext.sql("use sample;") 
+df = sqlContext.sql("show tables;") 
+df.show(100,False)
+
+query = "drop table if exists sample.tb_test_num_tmp;"
+logging.info("\nExecuting query: \n" + query)
+sqlContext.sql(query) 
+
+query = """
+    create table  if not exists sample.tb_test_num_tmp as
+    select f22, f02, min(bd) as f_date, max(bd) as l_date,f06,f07
+    from tb_test_qf_tmp1 
+    group by f22, f02,f06,f07;
+"""
+
+
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+sqlContext.sql(query) 
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+query = "drop table if exists sample.tb_test_num_tmp1;"
+
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+sqlContext.sql(query) 
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+query = """
+    create table if not exists sample.tb_test_num
+    as
+    select t.f22, f02, min(f_date) as f_date, max(l_date) as l_date,f06,f07
+    from sample.tb_test_num_tmp as t
+    group by t.f22,f02,f06,f07
+    limit 1;
+"""
+
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+sqlContext.sql(query) 
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+query = "Truncate table sample.tb_test_num;"
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+sqlContext.sql(query) 
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+
+query = """
+    create table  if not exists sample.tb_test_num_tmp1 as
+    select t.f22, f02, min(f_date) as f_date, max(l_date) as l_date,f06,f07
+     from
+    ( select * from tb_test_num_tmp
+    union all
+    select * from tb_test_num ) t
+    group by t.f22,f02,f06,f07
+;"""
+
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+sqlContext.sql(query) 
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+query = "drop table if exists sample.tb_test_num;"
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+sqlContext.sql(query) 
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+query = " alter table sample.tb_test_num_tmp1 rename to sample.tb_test_num; "
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+sqlContext.sql(query) 
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+query = " select * from sample.tb_test_num; "
+logging.info("\nExecuting query: \n" + query)
+runstarttime = datetime.now()
+df = sqlContext.sql(query) 
+df.show(100, False)
+runfinishtime = datetime.now()
+logging.info("Finished Query with " + str( (runfinishtime - runstarttime).seconds)  + " seconds")
+
+
+# In[10]:
 
 
 spark.sparkContext.stop()
+
+
+# In[ ]:
+
+
+
 
 
 # In[ ]:

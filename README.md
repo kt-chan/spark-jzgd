@@ -1,45 +1,59 @@
-# Apache Airflow and DBT on Apache Spark with Hudi support, using Docker Compose
-Stand-alone project that utilises public eCommerce data from Instacart to demonstrate how to schedule dbt models through Airflow.
-
-For more Data & Analytics related reading, check https://analyticsmayhem.com
+# Apache Spark SQL Stress Test for Log Processing
 
 ## Requirements 
 * Install [Docker](https://www.docker.com/products/docker-desktop)
 * Install [Docker Compose](https://github.com/docker/compose/releases v2.6) 
-* Download the [Kaggle Instacart eCommerce dataset](https://www.kaggle.com/c/instacart-market-basket-analysis/data) 
-
-## Dataset
-
-The dataset for this competition is a relational set of files describing customers' orders over time. The goal of the competition is to predict which products will be in a user's next order. The dataset is anonymized and contains a sample of over 3 million grocery orders from more than 200,000 Instacart users. For each user, we provide between 4 and 100 of their orders, with the sequence of products purchased in each order. We also provide the week and hour of day the order was placed, and a relative measure of time between orders. For more information, see the blog post [https://tech.instacart.com/3-million-instacart-orders-open-sourced-d40d29ead6f2] accompanying its public release.
-
-The user story for analytic example is available here:
-1. https://rpubs.com/MohabDiab/482437
-2. https://github.com/archd3sai/Instacart-Market-Basket-Analysis
-3. https://asagar60.medium.com/instacart-market-basket-analysis-part-1-introduction-eda-b08fd8250502
-
-## DBT with Spark and Hudi
-https://github.com/apache/hudi/tree/master/hudi-examples/hudi-examples-dbt
+* Download following packages, and put those under "tars" directory.
+*   apache-hive-3.1.3-bin.tar.gz      hadoop-aws-3.3.1.jar               
+*   aws-java-sdk-bundle-1.12.383.jar  Python-3.6.3.tgz
+*   hadoop-3.2.3.tar.gz               spark-3.3.1-bin-hadoop3.tgz
 
 ## Setup 
 * Clone the repository
+* Run chmod +x *.sh* 
 * Run ./build.sh force
-* Extract the "Kaggle Instacart eCommerce dataset" files to the new ./sample_data directory (files are needed as seed data)
-* Run chmod +x *.sh
-* Run start.sh
+* Run ./start-spark.sh
+
+## Dataset
+* The dataset is reversed generated according to data schema provided by log processing agency
+* It is required to measure the sql processing duration to generate the following output on hours batch ETL
+* +---+-----------+--------------------+---+-------------+---+---+
+* |f22|f02        |f16                 |cnt|bd           |f06|f07|
+* +---+-----------+--------------------+---+-------------+---+---+
+* |3  |19218983880|Great you found me !|16 |2023-05-17-08|0  |7  |
+* |3  |19218983881|Great you found me !|13 |2023-05-17-09|0  |7  |
+* |3  |19218983882|Great you found me !|13 |2023-05-17-10|0  |7  |
+* |3  |19218983883|Great you found me !|15 |2023-05-17-11|0  |7  |
+* |3  |19218983884|Great you found me !|17 |2023-05-17-11|0  |7  |
+* |3  |19218983885|Great you found me !|15 |2023-05-17-11|0  |7  |
+* |3  |19218983886|Great you found me !|12 |2023-05-17-11|0  |7  |
+* |3  |19218983887|Great you found me !|11 |2023-05-17-10|0  |7  |
+* |3  |19218983888|Great you found me !|16 |2023-05-17-11|0  |7  |
+* |3  |19218983889|Great you found me !|13 |2023-05-17-11|0  |7  |
+* +---+-----------+--------------------+---+-------------+---+---+
 
 ## Connections
-* Airflow homepage: `http://[hostname]:8080/home `
 * Jupyter notebook: `http://[hostname]:8888/lab?token=welcome `
-* DBT homepage: `http://[hostname]:8081/#!/overview `
+* HDFS homepage: http://[hostname]:9870/
 * Spark Master: `http://[hostname]:8082/ `
-* Spark Thrift: `http://[hostname]:4040/jobs/ `
+
+## Instruction
+* 1. Edit ./conf/default.conf , and change SystemConfig and ScaleConfig Parameters. You have at least change spark cluster connection information if you are not running this docker environment.
+* 
+* 2. Generate the data set with the following command
+* python ./bin/SQL1-PySpark-DataGen.py -f ./conf/default.conf 
+* 
+* 3. Execute daily batch ETL job
+* python ./bin/SQL1-PySpark-RunQuery.py -f ./conf/default.conf 
+* 
+* 4. Measure the output time for the log output line with prefix "Finished tb_test_qf_stat Insert Query ..."
+* python ./bin/SQL1-PySpark-DataGen.py -f ./conf/default.conf 
+
 
 ## Docker Compose Commands
-* Run the services: `./start.sh` for all service or `./start-spark.sh` for spark with jupyter notebook only
+* Run the services: `./start-spark.sh` for all service
 * Disable the services: `./clean.sh` & `./prune.sh`
 
 If you need to check the log of the running containers, use `docker-compose logs [service-name] -f ` to view the running services log.
 If you need to connect to the running containers, use `docker-compose exec -it [service-name] bash ` to login the running services.
 
-
-Credit to the very helpful repository: https://github.com/puckel/docker-airflow
