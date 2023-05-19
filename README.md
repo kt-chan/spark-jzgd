@@ -39,8 +39,8 @@ The objective is use data turbo with SQL semantic cache service to accelerate th
 * sudo ./start-spark.sh
 
 2. Edit ./juptyer/conf/default.conf , and change SystemInfo and ScaleInfo Parameters. You have at least change spark cluster connection information if you are not running this docker environment.
-* change SystemInfo for spark cluster setup, default is the local spark cluster values. 
-* change ScaleInfo for dataset size setup, default is the minimun values. 
+	- change SystemInfo for spark cluster setup, default is the local spark cluster values. 
+	- change ScaleInfo for dataset size setup, default is the minimun values. 
 
 3. Generate the data set with the following command
 * python ./bin/SQL1-PySpark-DataGen.py -f ./conf/default.conf 
