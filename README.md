@@ -24,7 +24,7 @@ The dataset is reversed generated according to data schema provided by log proce
 
 First, the SQL1-PySpark-DataGen.py Python script would generate all required dataset, with default 7 days logs, and then it would process the Batch workload at once for the first 6 days, and put the summary records into target tables.
 
-Seconds, you should run SQL1-PySpark-DataGen.py, and it would execute batch ETL workload for the last day on hours basis (total 24 rounds), and then append the output into target tables. 
+Seconds, you should run SQL1-PySpark-RunQuery.py, and it would execute batch ETL workload for the last day on hours basis (total 24 rounds), and then append the output into target tables. 
 
 The objective is use data turbo with SQL semantic cache service to accelerate this 24 iterations of batch ETL processes.
 
