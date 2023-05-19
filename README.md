@@ -1,6 +1,7 @@
 # Apache Spark SQL Stress Test for Log Processing
 
 ## Requirements 
+* Centos 7 or Ubuntu 18.04 above, with 8 Vcores and 16GB RAM, 100GB Disk space
 * Install [Docker](https://www.docker.com/products/docker-desktop)
 * Install [Docker Compose](https://github.com/docker/compose/releases v2.6) 
 * Internet Connection
@@ -18,23 +19,15 @@
 * Run ./build.sh
 * Run ./start-spark.sh
 
-## Dataset
-The dataset is reversed generated according to data schema provided by log processing agency
-It is required to measure the sql processing duration to generate the following output on hours batch ETL
-	+---+-----------+--------------------+---+-------------+---+---+
-	|f22|f02        |f16                 |cnt|bd           |f06|f07|
-	+---+-----------+--------------------+---+-------------+---+---+
-	|3  |19218983880|Great you found me !|16 |2023-05-17-08|0  |7  |
-	|3  |19218983881|Great you found me !|13 |2023-05-17-09|0  |7  |
-	|3  |19218983882|Great you found me !|13 |2023-05-17-10|0  |7  |
-	|3  |19218983883|Great you found me !|15 |2023-05-17-11|0  |7  |
-	|3  |19218983884|Great you found me !|17 |2023-05-17-11|0  |7  |
-	|3  |19218983885|Great you found me !|15 |2023-05-17-11|0  |7  |
-	|3  |19218983886|Great you found me !|12 |2023-05-17-11|0  |7  |
-	|3  |19218983887|Great you found me !|11 |2023-05-17-10|0  |7  |
-	|3  |19218983888|Great you found me !|16 |2023-05-17-11|0  |7  |
-	|3  |19218983889|Great you found me !|13 |2023-05-17-11|0  |7  |
-	+---+-----------+--------------------+---+-------------+---+---+
+## Objective and Dataset
+The dataset is reversed generated according to data schema provided by log processing agency. It is required to measure the sql processing duration to generate the following output on hours batch ETL
+
+First, the SQL1-PySpark-DataGen.py Python script would generate all required dataset, with default 7 days logs, and then it would process the Batch workload at once for the first 6 days, and put the summary records into target tables.
+
+Seconds, you should run SQL1-PySpark-DataGen.py, and it would execute batch ETL workload for the last day on hours basis (total 24 rounds), and then append the output into target tables. 
+
+The objective is use data turbo with SQL semantic cache service to accelerate this 24 iterations of batch ETL processes.
+
 
 ## Connections
 * Jupyter notebook: `http://[hostname]:8888/lab?token=welcome `
@@ -42,15 +35,20 @@ It is required to measure the sql processing duration to generate the following 
 * Spark Master: `http://[hostname]:8082/ `
 
 ## Instruction
-1. Edit ./conf/default.conf , and change SystemConfig and ScaleConfig Parameters. You have at least change spark cluster connection information if you are not running this docker environment.
+1. cd project directoy, if you run spark on current docker platform, please run following commands to stars necessary service. 
+* sudo ./start-spark.sh
 
-2. Generate the data set with the following command
+2. Edit ./juptyer/conf/default.conf , and change SystemInfo and ScaleInfo Parameters. You have at least change spark cluster connection information if you are not running this docker environment.
+* change SystemInfo for spark cluster setup, default is the local spark cluster values. 
+* change ScaleInfo for dataset size setup, default is the minimun values. 
+
+3. Generate the data set with the following command
 * python ./bin/SQL1-PySpark-DataGen.py -f ./conf/default.conf 
 
-3. Execute daily batch ETL job
+4. Execute daily batch ETL job
 * python ./bin/SQL1-PySpark-RunQuery.py -f ./conf/default.conf 
  
-4. Measure the output time for the log output line with prefix "Finished tb_test_qf_stat Insert Query ..."
+5. Measure the output time for the log output line with prefix "Finished tb_test_qf_stat Insert Query ..."
 * python ./bin/SQL1-PySpark-DataGen.py -f ./conf/default.conf 
 
 
