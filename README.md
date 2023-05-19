@@ -3,15 +3,19 @@
 ## Requirements 
 * Install [Docker](https://www.docker.com/products/docker-desktop)
 * Install [Docker Compose](https://github.com/docker/compose/releases v2.6) 
+* Internet Connection
 * Download following packages, and put those under "tars" directory.
-*   apache-hive-3.1.3-bin.tar.gz      hadoop-aws-3.3.1.jar               
-*   aws-java-sdk-bundle-1.12.383.jar  Python-3.6.3.tgz
-*   hadoop-3.2.3.tar.gz               spark-3.3.1-bin-hadoop3.tgz
+*   apache-hive-3.1.3-bin.tar.gz     
+*   hadoop-aws-3.3.1.jar               
+*   aws-java-sdk-bundle-1.12.383.jar 
+*   Python-3.6.3.tgz
+*   hadoop-3.2.3.tar.gz              
+*   spark-3.3.1-bin-hadoop3.tgz
 
 ## Setup 
 * Clone the repository
 * Run chmod +x *.sh* 
-* Run ./build.sh force
+* Run ./build.sh
 * Run ./start-spark.sh
 
 ## Dataset
